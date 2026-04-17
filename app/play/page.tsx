@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
-import Link from "next/link";
 
 export default function Slideshow() {
   const [images, setImages] = useState<string[]>([]);
@@ -11,9 +10,11 @@ export default function Slideshow() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [transitioning, setTransitioning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [showControls, setShowControls] = useState(true);
+  const [slideDuration, setSlideDuration] = useState(7);
+  const [showSettings, setShowSettings] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
   const fetchedRef = useRef(false);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchImages = useCallback(async () => {
     const supabase = createClient();
@@ -49,12 +50,10 @@ export default function Slideshow() {
   }, []);
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    fetchImages();
-
     const supabase = createClient();
     
+    setTimeout(() => fetchImages(), 0);
+
     const channel = supabase
       .channel("storage-images")
       .on(
@@ -66,53 +65,74 @@ export default function Slideshow() {
           filter: "bucket_id=eq.images",
         },
         () => {
-          fetchImages();
+          setTimeout(() => fetchImages(), 100);
         }
       )
       .subscribe();
 
+    const interval = setInterval(() => {
+      fetchImages();
+    }, 5000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [fetchImages]);
-
-  const hideControlsTemporarily = useCallback(() => {
-    setShowControls(false);
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(true);
-    }, 3000);
-  }, []);
 
   const goToNext = useCallback(() => {
     if (transitioning || images.length === 0) return;
     setTransitioning(true);
-    hideControlsTemporarily();
+    setProgress(0);
     setCurrentIndex((prev) => (prev + 1) % images.length);
     setTimeout(() => setTransitioning(false), 500);
-  }, [images.length, transitioning, hideControlsTemporarily]);
+  }, [images.length, transitioning]);
 
   const goToPrev = useCallback(() => {
     if (transitioning || images.length === 0) return;
     setTransitioning(true);
-    hideControlsTemporarily();
+    setProgress(0);
     setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
     setTimeout(() => setTransitioning(false), 500);
-  }, [images.length, transitioning, hideControlsTemporarily]);
+  }, [images.length, transitioning]);
   
   const togglePlay = useCallback(() => {
     setIsPlaying((prev) => !prev);
-    hideControlsTemporarily();
-  }, [hideControlsTemporarily]);
+  }, []);
 
   useEffect(() => {
     if (!isPlaying || images.length === 0) return;
 
-    const interval = setInterval(goToNext, 7000);
-    return () => clearInterval(interval);
-  }, [isPlaying, images.length, goToNext]);
+    let startTime = Date.now();
+    let rafId: number;
+    progressRef.current = 0;
+    
+    const updateProgress = () => {
+      const elapsed = Date.now() - startTime;
+      progressRef.current = Math.min((elapsed / (slideDuration * 1000)) * 100, 100);
+      setProgress(progressRef.current);
+      
+      if (progressRef.current < 100) {
+        rafId = requestAnimationFrame(updateProgress);
+      }
+    };
+    
+    rafId = requestAnimationFrame(updateProgress);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [isPlaying, images.length, slideDuration, currentIndex]);
+
+  useEffect(() => {
+    if (!isPlaying || images.length === 0) return;
+
+    const timeout = setTimeout(() => {
+      goToNext();
+    }, slideDuration * 1000);
+
+    return () => clearTimeout(timeout);
+  }, [isPlaying, images.length, slideDuration, currentIndex, goToNext]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -135,20 +155,19 @@ export default function Slideshow() {
             document.documentElement.requestFullscreen();
           }
           break;
+        case "s":
+        case "S":
+          setShowSettings(true);
+          break;
+        case "Escape":
+          setShowSettings(false);
+          break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [goToNext, goToPrev, togglePlay]);
-
-  useEffect(() => {
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, []);
 
   if (isLoading) {
     return (
@@ -179,16 +198,6 @@ export default function Slideshow() {
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span className="text-sm">Esperando fotos...</span>
           </div>
-
-          <div className="mt-10 pt-8 border-t border-gray-100">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-3 px-8 py-4 bg-green-600 hover:bg-green-500 text-white text-lg font-semibold rounded-full transition-all hover:scale-105 shadow-lg shadow-green-600/20"
-            >
-              <span className="text-xl">📸</span>
-              Subir Fotos
-            </Link>
-          </div>
         </div>
       </div>
     );
@@ -198,10 +207,7 @@ export default function Slideshow() {
   const currentImage = images[safeIndex];
 
   return (
-    <div 
-      className="fixed inset-0 bg-white flex flex-col cursor-pointer"
-      onClick={hideControlsTemporarily}
-    >
+    <div className="fixed inset-0 bg-white flex flex-col">
       <div className="flex-1 relative flex items-center justify-center">
         <div
           className={`
@@ -242,76 +248,95 @@ export default function Slideshow() {
         </button>
       </div>
 
-      <div
-        className={`
-          absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-white via-white to-transparent transition-all duration-300
-          ${showControls ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}
-        `}
-      >
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <button
-            onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className="p-4 bg-gray-900 hover:bg-gray-800 rounded-full transition-all text-white shadow-lg"
-            aria-label={isPlaying ? "Pausar" : "Reproducir"}
-          >
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100">
+        <div className="flex items-center justify-center text-xs gap-4">
+          <span className="flex items-center gap-1 text-gray-500">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-[10px]">←→</kbd>
+            <span className="text-gray-400">Navegar</span>
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="flex items-center gap-1 text-gray-500">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-[10px]">Espacio</kbd>
+            <span className="text-gray-400">Play/Pausa</span>
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="flex items-center gap-1 text-gray-500">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-[10px]">F</kbd>
+            <span className="text-gray-400">Fullscreen</span>
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="flex items-center gap-1 text-gray-500">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-[10px]">S</kbd>
+            <span className="text-gray-400">Ajustes</span>
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="flex items-center gap-2 text-gray-600">
+            <span className="font-semibold">{safeIndex + 1}</span>
+            <span className="text-gray-400">/</span>
+            <span className="text-gray-500">{images.length}</span>
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="flex items-center gap-1">
             {isPlaying ? (
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-              </svg>
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             ) : (
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+              <span className="w-2 h-2 bg-gray-400 rounded-full" />
             )}
-          </button>
-
-          <div className="flex items-center gap-1">
-            <span className="text-gray-800 text-2xl font-bold">
-              {safeIndex + 1}
+            <span className={isPlaying ? "text-green-600 font-medium" : "text-gray-500"}>
+              {isPlaying ? "Play" : "Pausa"}
             </span>
-            <span className="text-gray-400 text-lg mx-1">/</span>
-            <span className="text-gray-500 text-lg">
-              {images.length}
-            </span>
-          </div>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (document.fullscreenElement) {
-                document.exitFullscreen();
-              } else {
-                document.documentElement.requestFullscreen();
-              }
-            }}
-            className="p-4 bg-gray-900 hover:bg-gray-800 rounded-full transition-all text-white shadow-lg"
-            aria-label="Pantalla completa"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex justify-center mt-6 gap-1.5">
-          {images.map((_, index) => (
-            <button
-              key={index}
-              onClick={(e) => {
-                e.stopPropagation();
-                setTransitioning(true);
-                setCurrentIndex(index);
-                setTimeout(() => setTransitioning(false), 500);
-              }}
-              className={`
-                h-1.5 rounded-full transition-all
-                ${index === safeIndex ? "bg-gray-800 w-8" : "bg-gray-300 hover:bg-gray-400 w-1.5"}
-              `}
-              aria-label={`Ir a foto ${index + 1}`}
-            />
-          ))}
+          </span>
+          {isPlaying && (
+            <>
+              <span className="text-gray-300">|</span>
+              <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
+
+      {showSettings && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-8 w-80 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-gray-800 mb-6">Configuración</h3>
+            
+            <div className="mb-6">
+              <label className="block text-gray-600 text-sm mb-2">
+                Tiempo por slide (segundos)
+              </label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range"
+                  min="1"
+                  max="30"
+                  value={slideDuration}
+                  onChange={(e) => setSlideDuration(Number(e.target.value))}
+                  className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-gray-800 font-semibold w-8">{slideDuration}s</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowSettings(false)}
+              className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
