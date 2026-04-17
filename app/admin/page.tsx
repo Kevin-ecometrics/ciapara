@@ -40,7 +40,7 @@ export default function AdminPage() {
             name: file.name,
             path: `${folder}/${file.name}`,
             publicUrl: data.publicUrl,
-            size: file.metadata?.size || file.size,
+            size: (file.metadata as Record<string, unknown>)?.size as number | undefined,
           });
         }
       }
