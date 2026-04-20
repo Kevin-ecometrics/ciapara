@@ -227,25 +227,29 @@ export default function Slideshow() {
           />
         </div>
 
-        <button
-          onClick={(e) => { e.stopPropagation(); goToPrev(); }}
-          className="absolute left-6 p-5 bg-gray-900/60 hover:bg-gray-900/80 rounded-full transition-all text-white hover:scale-110"
-          aria-label="Foto anterior"
-        >
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+        {!isPlaying && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); goToPrev(); }}
+              className="absolute left-6 p-5 bg-gray-900/60 hover:bg-gray-900/80 rounded-full transition-all text-white hover:scale-110"
+              aria-label="Foto anterior"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
 
-        <button
-          onClick={(e) => { e.stopPropagation(); goToNext(); }}
-          className="absolute right-6 p-5 bg-gray-900/60 hover:bg-gray-900/80 rounded-full transition-all text-white hover:scale-110"
-          aria-label="Siguiente foto"
-        >
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); goToNext(); }}
+              className="absolute right-6 p-5 bg-gray-900/60 hover:bg-gray-900/80 rounded-full transition-all text-white hover:scale-110"
+              aria-label="Siguiente foto"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100">
